@@ -207,8 +207,12 @@ class BufferedOutputTest < Test::Unit::TestCase
     end
   end
 
-  setup do
+  def setup
     @i = nil
+    Dir.mktmpdir do |tmp_dir|
+      @tmp_dir = Pathname(tmp_dir)
+      yield
+    end
   end
 
   teardown do
@@ -221,6 +225,51 @@ class BufferedOutputTest < Test::Unit::TestCase
       @i.terminate unless @i.terminated?
     end
     Timecop.return
+  end
+
+  sub_test_case "hoge" do
+    def test_hoge
+      events_from_chunk = []
+      conf = {
+        "@type" => "file_single",
+        "path" => @tmp_dir.to_s,
+        "chunk_limit_size" => 1280,
+        "chunk_format" => :msgpack,
+        "flush_thread_count" => 4,
+        "flush_interval" => 1,
+        "queue_limit_length" => 100,
+      }
+      @i = create_output(:standard)
+      @i.configure(config_element('ROOT','',{},[config_element('buffer','',conf)]))
+      @i.register(:prefer_delayed_commit){ false }
+      @i.register(:write){ |chunk|
+        e = []
+        assert chunk.respond_to?(:each)
+        chunk.each{|t,r| e << [t,r]}
+        events_from_chunk << [:write, e]
+        p "write!!"
+      }
+      # @i.register(:try_write){ |chunk| e = []; assert chunk.respond_to?(:each); chunk.each{|t,r| e << [t,r]}; events_from_chunk << [:try_write, e] }
+      @i.start
+      @i.after_start
+
+      10000.times do
+        es = Fluent::ArrayEventStream.new(
+          [
+            [event_time('2016-04-11 16:00:01 +0000'), {"message" => "x" * 500}],
+            [event_time('2016-04-11 16:00:01 +0000'), {"message" => "x" * 500}],
+            [event_time('2016-04-11 16:00:01 +0000'), {"message" => "x" * 500}],
+            [event_time('2016-04-11 16:00:01 +0000'), {"message" => "x" * 500}],
+            [event_time('2016-04-11 16:00:01 +0000'), {"message" => "x" * 500}],
+            [event_time('2016-04-11 16:00:01 +0000'), {"message" => "x" * 500}],
+          ]
+        )
+        @i.emit_events("test.tag", es)
+        sleep 1.0
+      end
+
+      # waiting(5){ sleep 0.1 until events_from_chunk.size == 2 }
+    end
   end
 
   test 'queued_chunks_limit_size is same as flush_thread_count by default' do

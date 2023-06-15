@@ -394,6 +394,7 @@ module Fluent
               end
               chunk.mon_exit
             rescue => e
+              p e
               chunk.rollback
               chunk.mon_exit
               errors << e
@@ -678,6 +679,7 @@ module Fluent
               if format && empty_chunk
                 if chunk.bytesize > @chunk_limit_size
                   log.warn "chunk bytes limit exceeds for an emitted event stream: #{adding_bytesize}bytes"
+                  p "chunk bytes limit exceeds for an emitted event stream: #{adding_bytesize}bytes"
                 else
                   log.warn "chunk size limit exceeds for an emitted event stream: #{chunk.size}records"
                 end
@@ -727,6 +729,7 @@ module Fluent
       # 3. create unstaged chunk and append rest splits -> repeat it for all splits
 
       def write_step_by_step(metadata, data, format, splits_count, &block)
+        p "write_step_by_step"
         splits = []
         errors = []
         if splits_count > data.size
@@ -812,6 +815,7 @@ module Fluent
                 adding_bytes = chunk.bytesize - committed_bytesize
 
                 if chunk_size_over?(chunk) # split size is larger than difference between size_full? and size_over?
+                  p "ShouldRetry"
                   chunk.rollback
                   committed_bytesize = chunk.bytesize
 

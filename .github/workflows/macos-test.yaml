@@ -2,7 +2,6 @@ name: Testing on macOS
 
 on:
   push:
-    branches: [master]
   pull_request:
     branches: [master]
 
@@ -31,4 +30,4 @@ jobs:
       - name: Install dependencies
         run: bundle install
       - name: Run tests
-        run: bundle exec rake test
+        run: bundle exec rake test TESTOPTS="-t'BufferedOutputTest::hoge'"

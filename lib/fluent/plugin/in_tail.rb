@@ -370,17 +370,19 @@ module Fluent::Plugin
     def refresh_watchers
       target_paths_hash = expand_paths
       existence_paths_hash = existence_path
-      
+
       log.debug {
         target_paths_str = target_paths_hash.collect { |key, target_info| target_info.path }.join(",")
         existence_paths_str = existence_paths_hash.collect { |key, target_info| target_info.path }.join(",")
         "tailing paths: target = #{target_paths_str} | existing = #{existence_paths_str}"
       }
 
-      unwatched_hash = existence_paths_hash.reject {|key, value| target_paths_hash.key?(key)}
+      @pf&.unwatch_removed_targets(target_paths_hash)
+
+      removed_hash = existence_paths_hash.reject {|key, value| target_paths_hash.key?(key)}
       added_hash = target_paths_hash.reject {|key, value| existence_paths_hash.key?(key)}
 
-      stop_watchers(unwatched_hash, immediate: false, unwatched: true) unless unwatched_hash.empty?
+      stop_watchers(removed_hash, immediate: false) unless removed_hash.empty?
       start_watchers(added_hash) unless added_hash.empty?
       @startup = false if @startup
     end
@@ -454,7 +456,7 @@ module Fluent::Plugin
       }
     end
 
-    def stop_watchers(targets_info, immediate: false, unwatched: false, remove_watcher: true)
+    def stop_watchers(targets_info, immediate: false, remove_watcher: true)
       targets_info.each_value { |target_info|
         remove_path_from_group_watcher(target_info.path)
 
@@ -464,7 +466,6 @@ module Fluent::Plugin
           tw = @tails[target_info.path]
         end
         if tw
-          tw.unwatched = unwatched
           if immediate
             detach_watcher(tw, target_info.ino, false)
           else
@@ -502,10 +503,6 @@ module Fluent::Plugin
       new_target_info = TargetInfo.new(path, new_inode)
 
       if @follow_inodes
-        # When follow_inodes is true, it's not cleaned up by refresh_watcher.
-        # So it should be unwatched here explicitly.
-        tail_watcher.unwatched = true
-
         new_position_entry = @pf[new_target_info]
         # If `refresh_watcher` find the new file before, this will not be zero.
         # In this case, only we have to do is detaching the current tail_watcher.
@@ -536,11 +533,6 @@ module Fluent::Plugin
       tw.detach(@shutdown_start_time)
 
       tw.close if close_io
-
-      if tw.unwatched && @pf
-        target_info = TargetInfo.new(tw.path, ino)
-        @pf.unwatch(target_info)
-      end
     end
 
     def throttling_is_enabled?(tw)
@@ -780,7 +772,6 @@ module Fluent::Plugin
       attr_reader :path, :ino
       attr_reader :pe
       attr_reader :line_buffer_timer_flusher
-      attr_accessor :unwatched  # This is used for removing position entry from PositionFile
       attr_reader :watchers
       attr_accessor :group_watcher
 

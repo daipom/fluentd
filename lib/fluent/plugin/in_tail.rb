@@ -51,7 +51,7 @@ module Fluent::Plugin
     def initialize
       super
       @paths = []
-      @tails = {}
+      @tail_watchers = []
       @pf_file = nil
       @pf = nil
       @ignore_list = []
@@ -266,7 +266,7 @@ module Fluent::Plugin
     def shutdown
       @shutdown_start_time = Fluent::Clock.now
       # during shutdown phase, don't close io. It should be done in close after all threads are stopped. See close.
-      stop_watchers(existence_path, immediate: true, remove_watcher: false)
+      stop_watchers_for_shutdown
       @pf_file.close if @pf_file
 
       super
@@ -352,7 +352,7 @@ module Fluent::Plugin
 
     def existence_path
       hash = {}
-      @tails.each {|path, tw|
+      @tail_watchers.each {|tw|
         if @follow_inodes
           hash[tw.ino] = TargetInfo.new(tw.path, tw.ino)
         else
@@ -380,7 +380,7 @@ module Fluent::Plugin
       unwatched_hash = existence_paths_hash.reject {|key, value| target_paths_hash.key?(key)}
       added_hash = target_paths_hash.reject {|key, value| existence_paths_hash.key?(key)}
 
-      stop_watchers(unwatched_hash, immediate: false, unwatched: true) unless unwatched_hash.empty?
+      stop_watchers(unwatched_hash) unless unwatched_hash.empty?
       start_watchers(added_hash) unless added_hash.empty?
       @startup = false if @startup
     end
@@ -443,7 +443,7 @@ module Fluent::Plugin
         return
       end
 
-      @tails[path] = tw
+      @tail_watchers.append(tw)
       tw.on_notify
     end
 
@@ -454,29 +454,36 @@ module Fluent::Plugin
       }
     end
 
-    def stop_watchers(targets_info, immediate: false, unwatched: false, remove_watcher: true)
-      targets_info.each_value { |target_info|
+    def stop_watchers(targets_info)
+      targets_info.each_value do |target_info|
         remove_path_from_group_watcher(target_info.path)
 
-        if remove_watcher
-          tw = @tails.delete(target_info.path)
-        else
-          tw = @tails[target_info.path]
-        end
-        if tw
-          tw.unwatched = unwatched
-          if immediate
-            detach_watcher(tw, target_info.ino, false)
+        @tail_watchers.select { |tw|
+          not tw.detaching
+        }.select { |tw|
+          if @follow_inodes
+            tw.ino == target_info.ino
           else
-            detach_watcher_after_rotate_wait(tw, target_info.ino)
+            tw.path == target_info.path
           end
-        end
-      }
+        }.each { |tw|
+          tw.unwatched = true
+          detach_watcher_after_rotate_wait(tw, target_info.ino)
+        }
+      end
+    end
+
+    def stop_watchers_for_shutdown
+      @tail_watchers.each do |tw|
+        remove_path_from_group_watcher(tw.path)
+
+        detach_watcher(tw, tw.ino, false, false)
+      end
     end
 
     def close_watcher_handles
-      @tails.keys.each do |path|
-        tw = @tails.delete(path)
+      @tail_watchers.each do |tw|
+        tw = @tail_watchers.delete(tw)
         if tw
           tw.close
         end
@@ -510,12 +517,14 @@ module Fluent::Plugin
         # If `refresh_watcher` find the new file before, this will not be zero.
         # In this case, only we have to do is detaching the current tail_watcher.
         if new_position_entry.read_inode == 0
-          @tails[path] = setup_watcher(new_target_info, new_position_entry)
-          @tails[path].on_notify
+          new_watcher = setup_watcher(new_target_info, new_position_entry)
+          @tail_watchers << new_watcher
+          new_watcher.on_notify
         end
       else
-        @tails[path] = setup_watcher(new_target_info, pe)
-        @tails[path].on_notify
+        new_watcher = setup_watcher(new_target_info, pe)
+        @tail_watchers << new_watcher
+        new_watcher.on_notify
       end
 
       detach_watcher_after_rotate_wait(tail_watcher, pe.read_inode)
@@ -525,7 +534,7 @@ module Fluent::Plugin
     # It causes 'can't modify string; temporarily locked' error in IOHandler
     # so adding close_io argument to avoid this problem.
     # At shutdown, IOHandler's io will be released automatically after detached the event loop
-    def detach_watcher(tw, ino, close_io = true)
+    def detach_watcher(tw, ino, close_io = true, remove_watcher = true)
       if @follow_inodes && tw.ino != ino
         log.warn("detach_watcher could be detaching an unexpected tail_watcher with a different ino.",
                   path: tw.path, actual_ino_in_tw: tw.ino, expect_ino_to_close: ino)
@@ -541,6 +550,8 @@ module Fluent::Plugin
         target_info = TargetInfo.new(tw.path, ino)
         @pf.unwatch(target_info)
       end
+
+      @tail_watchers.delete(tw) if remove_watcher
     end
 
     def throttling_is_enabled?(tw)
@@ -556,6 +567,7 @@ module Fluent::Plugin
         # Detach now because it's already closed, waiting it doesn't make sense.
         detach_watcher(tw, ino)
       elsif throttling_is_enabled?(tw)
+        tw.detaching = true
         # When the throttling feature is enabled, it might not reach EOF yet.
         # Should ensure to read all contents before closing it, with keeping throttling.
         start_time_to_wait = Fluent::Clock.now
@@ -567,6 +579,7 @@ module Fluent::Plugin
           end
         end
       else
+        tw.detaching = true
         # when the throttling feature isn't enabled, just wait @rotate_wait
         timer_execute(:in_tail_close_watcher, @rotate_wait, repeat: false) do
           detach_watcher(tw, ino)
@@ -764,6 +777,7 @@ module Fluent::Plugin
       def initialize(target_info, pe, log, read_from_head, follow_inodes, update_watcher, line_buffer_timer_flusher, io_handler_build, metrics)
         @path = target_info.path
         @ino = target_info.ino
+        @detaching = false
         @pe = pe || MemoryPositionEntry.new
         @read_from_head = read_from_head
         @follow_inodes = follow_inodes
@@ -778,6 +792,7 @@ module Fluent::Plugin
       end
 
       attr_reader :path, :ino
+      attr_accessor :detaching
       attr_reader :pe
       attr_reader :line_buffer_timer_flusher
       attr_accessor :unwatched  # This is used for removing position entry from PositionFile

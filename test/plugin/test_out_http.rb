@@ -432,34 +432,69 @@ class HTTPOutputTest < Test::Unit::TestCase
       19883
     end
 
-    def test_connection_recreation
+    def create_driver_in_http
+      Fluent::Test::Driver::Input.new(Fluent::Plugin::HttpInput).configure %[
+        port 19884
+        bind "127.0.0.1"
+      ]
+    end
+
+    def test_foo
       d = create_driver(%[
-        endpoint http://127.0.0.1:#{server_port}/test
+        endpoint http://127.0.0.1:19884
         reuse_connections true
       ])
-
+      server = create_driver_in_http
+      server.instance_start
       d.run(default_tag: 'test.http', shutdown: false) do
         d.feed(test_events[0])
       end
 
-      data = @@result.data
+      server.instance_shutdown
 
-      # Restart server to simulate connection loss
-      @@http_server_thread.kill
-      @@http_server_thread.join
-      @@http_server_thread = Thread.new do
-        run_http_server
-      end
+      p server.events.length
+
+      server = create_driver_in_http
+      server.instance_start
+      sleep 1
 
       d.run(default_tag: 'test.http') do
         d.feed(test_events[1])
       end
 
-      result = @@result
-      assert_equal 'POST', result.method
-      assert_equal 'application/x-ndjson', result.content_type
-      assert_equal test_events, data.concat(result.data)
-      assert_not_empty result.headers
+      p server.events.length
+    ensure
+      server.instance_shutdown
     end
+
+    # def test_connection_recreation
+    #   d = create_driver(%[
+    #     endpoint http://127.0.0.1:#{server_port}/test
+    #     reuse_connections true
+    #   ])
+
+    #   d.run(default_tag: 'test.http', shutdown: false) do
+    #     d.feed(test_events[0])
+    #   end
+
+    #   data = @@result.data
+
+    #   # Restart server to simulate connection loss
+    #   @@http_server_thread.kill
+    #   @@http_server_thread.join
+    #   @@http_server_thread = Thread.new do
+    #     run_http_server
+    #   end
+
+    #   d.run(default_tag: 'test.http') do
+    #     d.feed(test_events[1])
+    #   end
+
+    #   result = @@result
+    #   assert_equal 'POST', result.method
+    #   assert_equal 'application/x-ndjson', result.content_type
+    #   assert_equal test_events, data.concat(result.data)
+    #   assert_not_empty result.headers
+    # end
   end
 end

@@ -37,6 +37,8 @@ module Fluent::Plugin
 
     class RetryableResponse < StandardError; end
 
+    CacheEntry = Struct.new(:uri, :conn)
+
     helpers :formatter
 
     desc 'The endpoint for HTTP request, e.g. http://example.com/api'
@@ -117,9 +119,6 @@ module Fluent::Plugin
 
     def configure(conf)
       super
-
-      @cache = Array.new(actual_flush_thread_count, @cache_entry.new("", nil)) if @reuse_connections
-      @cache_id = 0
 
       if @retryable_response_codes.nil?
         log.warn('Status code 503 is going to be removed from default `retryable_response_codes` from fluentd v2. Please add it by yourself if you wish')
@@ -261,25 +260,49 @@ module Fluent::Plugin
     end
 
     def make_request_cached(uri, req)
-      id = Thread.current.thread_variable_get(plugin_id)
-      if id.nil?
-        @cache_id_mutex.synchronize {
-          id = @cache_id
-          @cache_id += 1
-        }
-        Thread.current.thread_variable_set(plugin_id, id)
-      end
-      uri_str = uri.to_s
-      if @cache[id].uri != uri_str
-        @cache[id].conn.finish if @cache[id].conn&.started?
+      unless Thread.current[:cache].nil?
         http =  if @proxy_uri
                   Net::HTTP.start(uri.host, uri.port, @proxy_uri.host, @proxy_uri.port, @proxy_uri.user, @proxy_uri.password, @http_opt)
                 else
                   Net::HTTP.start(uri.host, uri.port, @http_opt)
                 end
-        @cache[id] = @cache_entry.new(uri_str, http)
+        Thread.current[:cache] = CacheEntry.new(uri_str, http)
       end
-      @cache[id].conn.request(req)
+
+      cache = Thread.current[:cache]
+      uri_str = uri.to_s
+      if cache.uri != uri_str
+        cache.conn.finish if cache.conn.started?
+        http =  if @proxy_uri
+                  Net::HTTP.start(uri.host, uri.port, @proxy_uri.host, @proxy_uri.port, @proxy_uri.user, @proxy_uri.password, @http_opt)
+                else
+                  Net::HTTP.start(uri.host, uri.port, @http_opt)
+                end
+        Thread.current[:cache] = CacheEntry.new(uri_str, http)
+        cache = Thread.current[:cache]
+      end
+
+      cache.conn.request(req)
+
+      # id = Thread.current.thread_variable_get(plugin_id)
+      # if id.nil?
+      #   @cache_id_mutex.synchronize {
+      #     id = @cache_id
+      #     @cache_id += 1
+      #   }
+      #   Thread.current.thread_variable_set(plugin_id, id)
+      # end
+      # uri_str = uri.to_s
+      # if @cache[id].uri != uri_str
+      #   @cache[id].conn.finish if @cache[id].conn&.started?
+      #   http =  if @proxy_uri
+      #             Net::HTTP.start(uri.host, uri.port, @proxy_uri.host, @proxy_uri.port, @proxy_uri.user, @proxy_uri.password, @http_opt)
+      #           else
+      #             Net::HTTP.start(uri.host, uri.port, @http_opt)
+      #           end
+      #   @cache[id] = @cache_entry.new(uri_str, http)
+      # end
+      # @cache[id].conn.request(req)
     end
 
     def make_request(uri, req)

@@ -66,6 +66,7 @@ module Fluent
         end
 
         def commit
+          p "FileChunk::commit"
           write_metadata # this should be at first: of course, this operation may fail
 
           @commit_position = @chunk.pos
@@ -74,7 +75,6 @@ module Fluent
           @adding_bytes = @adding_size = 0
           @modified_at = Fluent::Clock.real_now
           @modified_at_object = nil
-
           true
         end
 
@@ -154,6 +154,7 @@ module Fluent
         end
 
         def purge
+          p "FileChunk::purge"
           super
           @chunk.close
           @meta.close if @meta
@@ -256,6 +257,7 @@ module Fluent
           size = [bin.bytesize].pack('N')
           @meta.seek(0, IO::SEEK_SET)
           @meta.write(BUFFER_HEADER + size + bin)
+          p "write_metadata finished"
         end
 
         def file_rename(file, old_path, new_path, callback=nil)

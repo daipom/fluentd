@@ -343,6 +343,7 @@ module Fluent
           metadata_and_data.keys.sort.each do |metadata|
             data = metadata_and_data[metadata]
             write_once(metadata, data, format: format, size: size) do |chunk, adding_bytesize, error|
+              log.warn "block called"
               chunk.mon_enter # add lock to prevent to be committed/rollbacked from other threads
               operated_chunks << chunk
               if chunk.staged?
@@ -456,6 +457,7 @@ module Fluent
             # Notify delayed BufferChunkOverflowError here
             raise BufferChunkOverflowError, buffer_chunk_overflow_errors.join(", ")
           end
+          log.warn "Buffer::write finish!"
         end
       end
 
@@ -652,6 +654,7 @@ module Fluent
 
       def write_once(metadata, data, format: nil, size: nil, &block)
         return if data.empty?
+        log.warn "write_once"
 
         stored = false
         adding_bytesize = nil
@@ -675,6 +678,7 @@ module Fluent
             adding_bytesize = chunk.bytesize - original_bytesize
 
             if chunk_size_over?(chunk)
+              log.warn "write_once: chunk_size_over"
               if format && empty_chunk
                 if chunk.bytesize > @chunk_limit_size
                   log.warn "chunk bytes limit exceeds for an emitted event stream: #{adding_bytesize}bytes"
@@ -685,6 +689,7 @@ module Fluent
               chunk.rollback
 
               if format && !empty_chunk
+                log.warn "write_once: ShouldRetry"
                 # Event streams should be appended into a chunk at once
                 # as far as possible, to improve performance of formatting.
                 # Event stream may be a MessagePackEventStream. We don't want to split it into
@@ -727,6 +732,7 @@ module Fluent
       # 3. create unstaged chunk and append rest splits -> repeat it for all splits
 
       def write_step_by_step(metadata, data, format, splits_count, &block)
+        log.warn "write_step_by_step"
         splits = []
         if splits_count > data.size
           splits_count = data.size
@@ -762,6 +768,7 @@ module Fluent
         enqueue_chunk_before_retry = false
 
         while writing_splits_index < splits.size
+          log.warn "next chunk"
           chunk = get_next_chunk.call
           errors = []
           modified_chunks << {chunk: chunk, adding_bytesize: 0, errors: errors}
@@ -811,6 +818,7 @@ module Fluent
                 adding_bytes = chunk.bytesize - committed_bytesize
 
                 if chunk_size_over?(chunk) # split size is larger than difference between size_full? and size_over?
+                  log.warn "chunk_size_over"
                   chunk.rollback
                   committed_bytesize = chunk.bytesize
 
@@ -818,6 +826,7 @@ module Fluent
                     if adding_bytes > @chunk_limit_size
                       errors << "concatenated/appended a #{adding_bytes} bytes record (nth: #{writing_splits_index}) is larger than buffer chunk limit size (#{@chunk_limit_size})"
                       writing_splits_index += 1
+                      p "AAA"
                       next
                     else
                       # As already processed content is kept after rollback, then unstaged chunk should be queued.
@@ -826,6 +835,7 @@ module Fluent
                       synchronize { @stage.delete(modified_metadata) }
                       staged_chunk_used = false
                       chunk.unstaged!
+                      p "BBB"
                       break
                     end
                   end
@@ -851,12 +861,16 @@ module Fluent
             end
 
             modified_chunks.last[:adding_bytesize] = chunk.bytesize - original_bytesize
+            # modified_chunks.each do |data|
+            #   block.call(data[:chunk], data[:adding_bytesize], data[:errors])
+            # end
           end
         end
         modified_chunks.each do |data|
           block.call(data[:chunk], data[:adding_bytesize], data[:errors])
         end
       rescue ShouldRetry
+        log.warn "ShouldRetry"
         modified_chunks.each do |data|
           chunk = data[:chunk]
           chunk.rollback rescue nil
@@ -867,6 +881,150 @@ module Fluent
         enqueue_chunk(metadata) if enqueue_chunk_before_retry
         retry
       end
+
+      # def write_step_by_step(metadata, data, format, splits_count, &block)
+      #   log.warn "write_step_by_step"
+      #   splits = []
+      #   errors = []
+      #   if splits_count > data.size
+      #     splits_count = data.size
+      #   end
+      #   slice_size = if data.size % splits_count == 0
+      #                  data.size / splits_count
+      #                else
+      #                  data.size / (splits_count - 1)
+      #                end
+      #   slice_origin = 0
+      #   while slice_origin < data.size
+      #     splits << data.slice(slice_origin, slice_size)
+      #     slice_origin += slice_size
+      #   end
+
+      #   # This method will append events into the staged chunk at first.
+      #   # Then, will generate chunks not staged (not queued) to append rest data.
+      #   staged_chunk_used = false
+      #   modified_chunks = []
+      #   modified_metadata = metadata
+      #   get_next_chunk = ->(){
+      #     c = if staged_chunk_used
+      #           # Staging new chunk here is bad idea:
+      #           # Recovering whole state including newly staged chunks is much harder than current implementation.
+      #           modified_metadata = modified_metadata.dup_next
+      #           generate_chunk(modified_metadata)
+      #         else
+      #           synchronize { @stage[modified_metadata] ||= generate_chunk(modified_metadata).staged! }
+      #         end
+      #     modified_chunks << c
+      #     c
+      #   }
+
+      #   writing_splits_index = 0
+      #   enqueue_chunk_before_retry = false
+
+      #   while writing_splits_index < splits.size
+      #     log.warn "next chunk"
+      #     chunk = get_next_chunk.call
+      #     chunk.synchronize do
+      #       raise ShouldRetry unless chunk.writable?
+      #       staged_chunk_used = true if chunk.staged?
+
+      #       original_bytesize = committed_bytesize = chunk.bytesize
+      #       begin
+      #         while writing_splits_index < splits.size
+      #           split = splits[writing_splits_index]
+      #           formatted_split = format ? format.call(split) : nil
+
+      #           if split.size == 1 # Check BufferChunkOverflowError
+      #             determined_bytesize = nil
+      #             if @compress != :text
+      #               determined_bytesize = nil
+      #             elsif formatted_split
+      #               determined_bytesize = formatted_split.bytesize
+      #             elsif split.first.respond_to?(:bytesize)
+      #               determined_bytesize = split.first.bytesize
+      #             end
+
+      #             if determined_bytesize && determined_bytesize > @chunk_limit_size
+      #               # It is a obvious case that BufferChunkOverflowError should be raised here.
+      #               # But if it raises here, already processed 'split' or
+      #               # the proceeding 'split' will be lost completely.
+      #               # So it is a last resort to delay raising such a exception
+      #               errors << "a #{determined_bytesize} bytes record (nth: #{writing_splits_index}) is larger than buffer chunk limit size (#{@chunk_limit_size})"
+      #               writing_splits_index += 1
+      #               next
+      #             end
+
+      #             if determined_bytesize.nil? || chunk.bytesize + determined_bytesize > @chunk_limit_size
+      #               # The split will (might) cause size over so keep already processed
+      #               # 'split' content here (allow performance regression a bit).
+      #               chunk.commit
+      #               committed_bytesize = chunk.bytesize
+      #             end
+      #           end
+
+      #           if format
+      #             chunk.concat(formatted_split, split.size)
+      #           else
+      #             chunk.append(split, compress: @compress)
+      #           end
+      #           adding_bytes = chunk.bytesize - committed_bytesize
+
+      #           if chunk_size_over?(chunk) # split size is larger than difference between size_full? and size_over?
+      #             log.warn "chunk_size_over"
+      #             chunk.rollback
+      #             committed_bytesize = chunk.bytesize
+
+      #             if split.size == 1 # Check BufferChunkOverflowError again
+      #               if adding_bytes > @chunk_limit_size
+      #                 errors << "concatenated/appended a #{adding_bytes} bytes record (nth: #{writing_splits_index}) is larger than buffer chunk limit size (#{@chunk_limit_size})"
+      #                 writing_splits_index += 1
+      #                 next
+      #               else
+      #                 # As already processed content is kept after rollback, then unstaged chunk should be queued.
+      #                 # After that, re-process current split again.
+      #                 # New chunk should be allocated, to do it, modify @stage and so on.
+      #                 synchronize { @stage.delete(modified_metadata) }
+      #                 staged_chunk_used = false
+      #                 chunk.unstaged!
+      #                 break
+      #               end
+      #             end
+
+      #             if chunk_size_full?(chunk) || split.size == 1
+      #               enqueue_chunk_before_retry = true
+      #             else
+      #               splits_count *= 10
+      #             end
+
+      #             raise ShouldRetry
+      #           end
+
+      #           writing_splits_index += 1
+
+      #           if chunk_size_full?(chunk)
+      #             break
+      #           end
+      #         end
+      #       rescue
+      #         chunk.purge if chunk.unstaged? # unstaged chunk will leak unless purge it
+      #         raise
+      #       end
+
+      #       block.call(chunk, chunk.bytesize - original_bytesize, errors)
+      #       errors = []
+      #     end
+      #   end
+      # rescue ShouldRetry
+      #   log.warn "ShouldRetry"
+      #   modified_chunks.each do |mc|
+      #     mc.rollback rescue nil
+      #     if mc.unstaged?
+      #       mc.purge rescue nil
+      #     end
+      #   end
+      #   enqueue_chunk(metadata) if enqueue_chunk_before_retry
+      #   retry
+      # end
 
       STATS_KEYS = [
         'stage_length',

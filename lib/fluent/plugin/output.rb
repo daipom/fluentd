@@ -871,6 +871,7 @@ module Fluent
       end
 
       def emit_events(tag, es)
+        p "emit_events"
         # actually this method will be overwritten by #configure
         if @buffering
           emit_buffered(tag, es)
@@ -963,6 +964,7 @@ module Fluent
       end
 
       def execute_chunking(tag, es, enqueue: false)
+        p "execute_chunking"
         if @simple_chunking
           handle_stream_simple(tag, es, enqueue: enqueue)
         elsif @custom_format
@@ -1036,6 +1038,7 @@ module Fluent
       #   iteration of event stream, and it should be done just once even if total event stream size
       #   is bigger than chunk_limit_size because of performance.
       def handle_stream_with_custom_format(tag, es, enqueue: false)
+        p "handle_stream_with_custom_format"
         meta_and_data = {}
         records = 0
         es.each(unpacker: Fluent::MessagePackFactory.thread_local_msgpack_unpacker) do |time, record|
@@ -1056,6 +1059,7 @@ module Fluent
       end
 
       def handle_stream_with_standard_format(tag, es, enqueue: false)
+        p "handle_stream_with_standard_format"
         format_proc = generate_format_proc
         meta_and_data = {}
         records = 0
@@ -1074,6 +1078,7 @@ module Fluent
       end
 
       def handle_stream_simple(tag, es, enqueue: false)
+        p "handle_stream_simple"
         format_proc = nil
         meta = metadata((@chunk_key_tag ? tag : nil), nil, nil)
         records = es.size

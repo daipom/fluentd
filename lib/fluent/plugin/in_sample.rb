@@ -87,14 +87,15 @@ module Fluent::Plugin
     end
 
     def run
+      @has_run = false
       batch_num    = (@rate / BIN_NUM).to_i
       residual_num = (@rate % BIN_NUM)
       while thread_current_running?
         current_time = Time.now.to_i
-        BIN_NUM.times do
-          break unless (thread_current_running? && Time.now.to_i <= current_time)
-          wait(0.1) { emit(batch_num) }
-        end
+        # BIN_NUM.times do
+        #   break unless (thread_current_running? && Time.now.to_i <= current_time)
+        #   wait(0.1) { emit(batch_num) }
+        # end
         emit(residual_num) if thread_current_running?
         # wait for next second
         while thread_current_running? && Time.now.to_i <= current_time
@@ -104,6 +105,8 @@ module Fluent::Plugin
     end
 
     def emit(num)
+      return if @has_run
+      p "emit: #{@size}, #{num}"
       begin
         if @size > 1
           num.times do
@@ -115,6 +118,7 @@ module Fluent::Plugin
       rescue => _
         # ignore all errors not to stop emits by emit errors
       end
+      @has_run = true
     end
 
     def generate

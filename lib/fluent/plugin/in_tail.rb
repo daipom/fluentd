@@ -1011,8 +1011,8 @@ module Fluent::Plugin
           @buffer = ''.force_encoding(from_encoding)
           @eol = "\n".encode(from_encoding).freeze
           @max_line_size = max_line_size
-          @was_long_line = false
-          @has_skipped_line = false
+          @skip_current_line = false
+          @skipping_current_line_bytesize = 0
           @log = log
         end
 
@@ -1048,7 +1048,7 @@ module Fluent::Plugin
 
         def read_lines(lines)
           idx = @buffer.index(@eol)
-          @has_skipped_line = false
+          has_skipped_line = false
 
           until idx.nil?
             # Using freeze and slice is faster than slice!
@@ -1059,37 +1059,37 @@ module Fluent::Plugin
             idx = @buffer.index(@eol)
 
             is_long_line = @max_line_size && (
-              rbuf.bytesize > @max_line_size || @was_long_line
+              @skip_current_line || rbuf.bytesize > @max_line_size
             )
 
             if is_long_line
               @log.warn "received line length is longer than #{@max_line_size}"
               @log.debug("skipped line: ") { convert(rbuf).chomp }
-              @was_long_line = false
-              @has_skipped_line = true
+              has_skipped_line = true
+              @skip_current_line = false
+              @skipping_current_line_bytesize = 0
               next
             end
 
             lines << convert(rbuf)
           end
 
-          is_long_line = @max_line_size && (
-            @buffer.bytesize > @max_line_size || @was_long_line
+          is_long_current_line = @max_line_size && (
+            @skip_current_line || @buffer.bytesize > @max_line_size
           )
 
-          if is_long_line
+          if is_long_current_line
+            @skip_current_line = true
+            @skipping_current_line_bytesize += @buffer.bytesize
             @buffer.clear
-            @was_long_line = true
-            @has_skipped_line = true
           end
+
+          return has_skipped_line
         end
 
-        def bytesize
+        def reading_bytesize
+          return @skipping_current_line_bytesize if @skip_current_line
           @buffer.bytesize
-        end
-
-        def has_skipped_line?
-          @has_skipped_line
         end
       end
 
@@ -1203,8 +1203,7 @@ module Fluent::Plugin
                     @fifo << data
 
                     n_lines_before_read = @lines.size
-                    @fifo.read_lines(@lines)
-                    has_skipped_line = @fifo.has_skipped_line?
+                    has_skipped_line = @fifo.read_lines(@lines) || has_skipped_line
                     group_watcher&.update_lines_read(@path, @lines.size - n_lines_before_read)
 
                     group_watcher_limit = group_watcher&.limit_lines_reached?(@path)
@@ -1227,13 +1226,11 @@ module Fluent::Plugin
                 end
               end
 
-              if @lines.empty? && has_skipped_line
-                @watcher.pe.update_pos(io.pos - @fifo.bytesize)
-              end
-
-              unless @lines.empty?
+              if @lines.empty?
+                @watcher.pe.update_pos(io.pos - @fifo.reading_bytesize) if has_skipped_line
+              else
                 if @receive_lines.call(@lines, @watcher)
-                  @watcher.pe.update_pos(io.pos - @fifo.bytesize)
+                  @watcher.pe.update_pos(io.pos - @fifo.reading_bytesize)
                   @lines.clear
                 else
                   read_more = false
@@ -1245,12 +1242,12 @@ module Fluent::Plugin
 
         def open
           io = Fluent::FileWrapper.open(@path)
-          io.seek(@watcher.pe.read_pos + @fifo.bytesize)
+          io.seek(@watcher.pe.read_pos + @fifo.reading_bytesize)
           @metrics.opened.inc
           io
         rescue RangeError
           io.close if io
-          raise WatcherSetupError, "seek error with #{@path}: file position = #{@watcher.pe.read_pos.to_s(16)}, reading bytesize = #{@fifo.bytesize.to_s(16)}"
+          raise WatcherSetupError, "seek error with #{@path}: file position = #{@watcher.pe.read_pos.to_s(16)}, reading bytesize = #{@fifo.reading_bytesize.to_s(16)}"
         rescue Errno::EACCES => e
           @log.warn "#{e}"
           nil

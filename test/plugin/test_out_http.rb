@@ -533,10 +533,17 @@ class HTTPOutputTest < Test::Unit::TestCase
       19882
     end
 
-    def test_write_with_gzip
+    data(:json_array, [false, true])
+    data(:buffer_compress, ["text", "gzip"])
+    def test_write_with_gzip(data)
       d = create_driver(%[
         endpoint http://127.0.0.1:#{server_port}/test
         compress gzip
+        json_array #{data[:json_array]}
+        <buffer>
+          @type memory
+          compress #{data[:buffer_compress]}
+        </buffer>
       ])
       d.run(default_tag: 'test.http') do
         test_events.each { |event|
@@ -546,7 +553,10 @@ class HTTPOutputTest < Test::Unit::TestCase
 
       result = @@result
       assert_equal 'POST', result.method
-      assert_equal 'application/x-ndjson', result.content_type
+      assert_equal(
+        data[:json_array] ? 'application/json' : 'application/x-ndjson',
+        result.content_type
+      )
       assert_equal 'gzip', result.headers['content-encoding']
       assert_equal test_events, result.data
       assert_not_empty result.headers

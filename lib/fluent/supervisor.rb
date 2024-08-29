@@ -44,6 +44,7 @@ module Fluent
       @rpc_server = nil
       @counter = nil
       @socket_manager_server = nil
+      @is_limited_mode = false
 
       @fluentd_lock_dir = Dir.mktmpdir("fluentd-lock-")
       ENV['FLUENTD_LOCK_DIR'] = @fluentd_lock_dir
@@ -81,7 +82,7 @@ module Fluent
       stop_rpc_server if @rpc_endpoint
       stop_counter_server if @counter
       cleanup_lock_dir
-      Fluent::Supervisor.cleanup_resources
+      Fluent::Supervisor.cleanup_resources unless @is_limited_mode
     end
 
     def cleanup_lock_dir
@@ -322,7 +323,9 @@ module Fluent
     end
 
     def start_new_supervisor
-      # TODO: send signal to workers to make them limited mode
+      send_signal_to_workers(:USR2)
+      sleep 5 # TODO Wait until all workers finish shifting to the limited mode. How?
+      @is_limited_mode = true
       commands = [ServerEngine.ruby_bin_path, $0] + ARGV
       env_to_add = {"SERVERENGINE_SOCKETMANAGER_INTERNAL_TOKEN" => ServerEngine::SocketManager::INTERNAL_TOKEN}
       Process.spawn(env_to_add, commands.join(" "))
@@ -850,7 +853,7 @@ module Fluent
         end
 
         trap :USR2 do
-          reload_config
+          shift_to_limited_mode
         end
 
         trap :CONT do
@@ -905,6 +908,16 @@ module Fluent
           $log.debug "flushing thread: flushed"
         rescue Exception => e
           $log.warn "flushing thread error: #{e}"
+        end
+      end
+    end
+
+    def shift_to_limited_mode
+      Thread.new do
+        begin
+          Fluent::Engine.shift_to_limited_mode!
+        rescue Exception => e
+          $log.warn "failed to shift to the limited mode: #{e}"
         end
       end
     end

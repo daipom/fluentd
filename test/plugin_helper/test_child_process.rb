@@ -329,8 +329,8 @@ class ChildProcessTest < Test::Unit::TestCase
         sleep 0.1 while ary.size < i
         elapsed = Fluent::Clock.now - start_time
         assert_equal(i, ary.size)
-        assert_true(elapsed > i && elapsed < i + 0.5,
-                    "actual elapsed: #{elapsed}")
+        p elapsed
+        assert { elapsed > i && elapsed < i + 0.5 }
       end
       assert_equal [], @d.log.out.logs
       @d.stop

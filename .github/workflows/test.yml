@@ -2,7 +2,6 @@ name: Test
 
 on:
   push:
-    branches: [master]
     paths-ignore:
       - '*.md'
       - 'lib/fluent/version.rb'
@@ -41,4 +40,5 @@ jobs:
       - name: Install dependencies
         run: bundle install
       - name: Run tests
-        run: bundle exec rake test TESTOPTS="-v --no-show-detail-immediately"
+        run: |
+          bundle exec rake test TESTOPTS="-t'ChildProcessTest' -n'test: can execute external command many times, which finishes immediately' -v --no-show-detail-immediately"

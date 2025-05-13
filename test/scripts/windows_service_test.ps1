@@ -34,10 +34,12 @@ if ("foo" | Select-String -Pattern "boo" -SimpleMatch -Quiet -ErrorAction Silent
 
 # Test: no warn/error/fatal logs
 Get-ChildItem "*.log" | %{
-    echo "test"
-    if ("foo" | Select-String -Pattern "foo" -SimpleMatch -Quiet) {
-        echo "foo"
-    }
+    Select-String -Path "fluentd.log" -Pattern "[warn]" -SimpleMatch
+    Select-String -Path "fluentd.log" -Pattern "[warn]" -SimpleMatch -Quiet
+    Select-String -Path "fluentd.log" -Pattern "[warn]", "[error]", "[fatal]" -SimpleMatch -Quiet
+    if (Select-String -Path "fluentd.log" -Pattern "[warn]" -SimpleMatch -Quiet) { echo "a" }
+    if (Select-String -Path "fluentd.log" -Pattern "[warn]", "[error]", "[fatal]" -SimpleMatch -Quiet) { echo "b" }
+    if (Select-String -Path $_ -Pattern "[warn]" -SimpleMatch -Quiet) { echo "c" }
 }
 
 Stop-Service fluentdwinsvc

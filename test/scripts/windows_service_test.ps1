@@ -23,6 +23,7 @@ Start-Sleep 30
 
 # Test: the service should be running after started
 if ((Get-Service fluentdwinsvc).Status -ne "Running") {
+    ls
     Write-Output (Get-Service fluentdwinsvc).Status
     Get-Content $log_path -ErrorAction SilentlyContinue
     Write-Error "The service should be running after started."

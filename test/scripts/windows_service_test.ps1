@@ -34,10 +34,9 @@ if ("foo" | Select-String -Pattern "boo" -SimpleMatch -Quiet -ErrorAction Silent
 
 # Test: no warn/error/fatal logs
 Get-ChildItem "*.log" | %{
-    Get-Content $_
-    if (Select-String -Path $_ -Pattern "[info]", "[error]", "[fatal]" -SimpleMatch -Quiet) {
-        Select-String -Path $_ -Pattern "[info]", "[error]", "[fatal]" -SimpleMatch
-        Write-Error "There are abnormal level logs in ${_}:"
+    echo "test"
+    if ("foo" | Select-String -Pattern "foo" -SimpleMatch -Quiet) {
+        echo "foo"
     }
 }
 

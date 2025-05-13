@@ -23,8 +23,8 @@ if ((Get-Service fluentdwinsvc).Status -ne "Running") {
 # Test: no warn/error/fatal logs
 Get-ChildItem "*.log" | %{
     Get-Content $_
-    if (Select-String -Path $_ -Pattern "[warn]", "[error]", "[fatal]" -SimpleMatch -Quiet) {
-        Select-String -Path $_ -Pattern "[warn]", "[error]", "[fatal]" -SimpleMatch
+    if (Select-String -Path $_ -Pattern "[info]", "[error]", "[fatal]" -SimpleMatch -Quiet) {
+        Select-String -Path $_ -Pattern "[info]", "[error]", "[fatal]" -SimpleMatch
         Write-Error "There are abnormal level logs in ${_}:"
     }
 }

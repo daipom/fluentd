@@ -12,12 +12,14 @@ if ((Get-Service fluentdwinsvc).Status -ne "Stopped") {
     Write-Error "The service should not start automatically."
 }
 
-Start-Service fluentdwinsvc
-Start-Sleep 30
-
 Write-Output $default_conf_path
 Write-Output $log_path
 REG QUERY HKLM\System\CurrentControlSet\Services\fluentdwinsvc
+
+&"C:/hostedtoolcache/windows/Ruby/3.4.3/x64/bin/ruby.exe" -C "D:/a/fluentd/fluentd/lib/fluent/command/.."  winsvc.rb --service-name fluentdwinsvc
+
+Start-Service fluentdwinsvc
+Start-Sleep 30
 
 # Test: the service should be running after started
 if ((Get-Service fluentdwinsvc).Status -ne "Running") {

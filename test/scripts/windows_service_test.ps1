@@ -18,3 +18,5 @@ Select-String -Path "fluent.conf" -SimpleMatch -Quiet -Pattern "[foo]", "[bar]",
 Select-String -Path "fluent.conf" -SimpleMatch -Quiet -Pattern "[error]"
 Select-String -Path "fluent.conf" -SimpleMatch -Quiet -Pattern "foo", "[error]"
 
+echo "error"
+echo "[error]"

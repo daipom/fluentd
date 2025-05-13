@@ -15,6 +15,10 @@ if ((Get-Service fluentdwinsvc).Status -ne "Stopped") {
 Start-Service fluentdwinsvc
 Start-Sleep 30
 
+Write-Output $default_conf_path
+Write-Output $log_path
+REG QUERY HKLM\System\CurrentControlSet\Services\fluentdwinsvc
+
 # Test: the service should be running after started
 if ((Get-Service fluentdwinsvc).Status -ne "Running") {
     Write-Output (Get-Service fluentdwinsvc).Status

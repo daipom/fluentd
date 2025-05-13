@@ -20,6 +20,18 @@ if ((Get-Service fluentdwinsvc).Status -ne "Running") {
     Write-Error "The service should be running after started."
 }
 
+if ("foo" | Select-String -Pattern "foo" -SimpleMatch -Quiet) {
+    echo "foo"
+}
+
+if ("foo" | Select-String -Pattern "bar" -SimpleMatch -Quiet) {
+    echo "bar"
+}
+
+if ("foo" | Select-String -Pattern "boo" -SimpleMatch -Quiet -ErrorAction SilentlyContinue) {
+    echo "boo"
+}
+
 # Test: no warn/error/fatal logs
 Get-ChildItem "*.log" | %{
     Get-Content $_

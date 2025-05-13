@@ -14,3 +14,7 @@ Select-String -Path "fluent.conf" -SimpleMatch -Quiet -Pattern "[warn]", "[error
 Select-String -Path "fluent.conf" -SimpleMatch -Quiet -Pattern "warn", "error", "fatal"
 Select-String -Path "fluent.conf" -SimpleMatch -Quiet -Pattern "[warn]", "[fatal]"
 Select-String -Path "fluent.conf" -SimpleMatch -Quiet -Pattern "[foo]", "[bar]", "[boo]"
+
+Select-String -Path "fluent.conf" -SimpleMatch -Quiet -Pattern "[error]"
+Select-String -Path "fluent.conf" -SimpleMatch -Quiet -Pattern "foo", "[error]"
+

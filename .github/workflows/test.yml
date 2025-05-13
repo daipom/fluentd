@@ -25,6 +25,8 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby-version }}
       - name: Install dependencies
-        run: bundle install
+        run: |
+          bundle install
+          rake install
       - name: Run tests
         run: test\scripts\windows_service_test.ps1

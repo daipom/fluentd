@@ -46,6 +46,12 @@ Rake::TestTask.new(:base_test) do |t|
   t.ruby_opts = ["-Eascii-8bit:ascii-8bit"]
 end
 
+Rake::TestTask.new(:benchmark) do |t|
+  t.libs << "test"
+  t.libs << "lib"
+  t.test_files = FileList["test/benchmark/**/benchmark_*.rb"]
+end
+
 task :parallel_test do
   FileUtils.rm_rf('./test/tmp')
   sh("parallel_test ./test/*.rb ./test/plugin/*.rb")

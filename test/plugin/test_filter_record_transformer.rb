@@ -9,12 +9,14 @@ class RecordTransformerFilterTest < Test::Unit::TestCase
   include FlexMock::TestCase
 
   setup do
+    p "RecordTransformerFilterTest setup"
     Test.setup
     @hostname = Socket.gethostname.chomp
     @tag = 'test.tag'
     @tag_parts = @tag.split('.')
     @time = event_time('2010-05-04 03:02:01 UTC')
     Timecop.freeze(@time)
+    p "RecordTransformerFilterTest setup end"
   end
 
   teardown do
@@ -561,6 +563,7 @@ class RecordTransformerFilterTest < Test::Unit::TestCase
 
   sub_test_case 'test error record' do
     test 'invalid record for placeholders' do
+      p "invalid record for placeholders"
       d = create_driver(%[
         enable_ruby yes
         <record>
@@ -569,9 +572,12 @@ class RecordTransformerFilterTest < Test::Unit::TestCase
       ])
       flexmock(d.instance.router).should_receive(:emit_error_event).
         with(String, Fluent::EventTime, Hash, RuntimeError).once
+      p "run"
       d.run do
         d.feed(@tag, Fluent::EventTime.now, {'key' => 'value'})
+        p "feed"
       end
+      p "end"
     end
   end
 end

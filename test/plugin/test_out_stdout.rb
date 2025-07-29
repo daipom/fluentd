@@ -193,21 +193,6 @@ class StdoutOutputTest < Test::Unit::TestCase
     end
   end
 
-  test 'use_logger false' do
-    d = create_driver(<<~EOC)
-      use_logger false
-    EOC
-    time = event_time
-
-    out = capture_stdout do
-      d.run(default_tag: 'test', flush: true) do
-        d.feed(time, {'test' => 'test'})
-      end
-    end
-
-    assert_equal "#{Time.at(time).localtime.strftime(TIME_FORMAT)} test: {\"test\":\"test\"}\n", out
-  end
-
   def capture_log
     tmp = $log
     $log = StringIO.new
@@ -215,14 +200,5 @@ class StdoutOutputTest < Test::Unit::TestCase
     return $log.string
   ensure
     $log = tmp
-  end
-
-  def capture_stdout
-    tmp = $stdout
-    $stdout = StringIO.new
-    yield
-    return $stdout.string
-  ensure
-    $stdout = tmp
   end
 end

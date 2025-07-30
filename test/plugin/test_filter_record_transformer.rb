@@ -24,6 +24,7 @@ class RecordTransformerFilterTest < Test::Unit::TestCase
   end
 
   def create_driver(conf = '')
+    p "create_driver"
     Fluent::Test::Driver::Filter.new(Fluent::Plugin::RecordTransformerFilter).configure(conf)
   end
 

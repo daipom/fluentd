@@ -43,6 +43,7 @@ module Fluent::Plugin
     config_param :auto_typecast, :bool, default: true
 
     def configure(conf)
+      p "RecordTransformerFilter: configure"
       super
 
       map = {}
@@ -68,17 +69,25 @@ module Fluent::Plugin
       }
       @placeholder_expander =
         if @enable_ruby
+          p "enable_ruby: require"
           # require utilities which would be used in ruby placeholders
           require 'pathname'
+          p "pathname required"
           require 'uri'
+          p "uri required"
           require 'cgi'
+          p "cgi required"
           RubyPlaceholderExpander.new(placeholder_expander_params)
         else
           PlaceholderExpander.new(placeholder_expander_params)
         end
+      p "preprocess_map"
       @map = @placeholder_expander.preprocess_map(map)
 
+      p "gethostname"
       @hostname = Socket.gethostname
+
+      p "RecordTransformerFilter: configure done"
     end
 
     def filter_stream(tag, es)
@@ -247,9 +256,11 @@ module Fluent::Plugin
       attr_reader :log
 
       def initialize(params)
+        p "RubyPlaceholderExpander: initialize"
         @log = params[:log]
         @auto_typecast = params[:auto_typecast]
         @cleanroom_expander = CleanroomExpander.new
+        p "RubyPlaceholderExpander: initialize end"
       end
 
       def time_value(time)
@@ -261,6 +272,7 @@ module Fluent::Plugin
       # @param [Hash|String|Array] value record map config
       # @param [Boolean] force_stringify the value must be string, used for hash key
       def preprocess_map(value, force_stringify = false)
+        p "preprocess_map: #{value}"
         new_value = nil
         if value.is_a?(String)
           if @auto_typecast && !force_stringify

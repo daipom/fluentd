@@ -570,6 +570,7 @@ class RecordTransformerFilterTest < Test::Unit::TestCase
           foo ${record["unknown"]["key"]}
         </record>
       ])
+      p "flexmock"
       flexmock(d.instance.router).should_receive(:emit_error_event).
         with(String, Fluent::EventTime, Hash, RuntimeError).once
       p "run"

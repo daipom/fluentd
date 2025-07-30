@@ -71,12 +71,12 @@ module Fluent::Plugin
         if @enable_ruby
           p "enable_ruby: require"
           # require utilities which would be used in ruby placeholders
-          require 'pathname'
-          p "pathname required"
-          require 'uri'
-          p "uri required"
-          require 'cgi'
-          p "cgi required"
+          # require 'pathname'
+          # p "pathname required"
+          # require 'uri'
+          # p "uri required"
+          # require 'cgi'
+          # p "cgi required"
           RubyPlaceholderExpander.new(placeholder_expander_params)
         else
           PlaceholderExpander.new(placeholder_expander_params)
